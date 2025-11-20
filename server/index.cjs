@@ -36,8 +36,16 @@ app.use("/uploads", express.static(UPLOADS_PATH));
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    if (!fs.existsSync(UPLOADS_PATH)) {
-      fs.mkdirSync(UPLOADS_PATH, { recursive: true });
+    try {
+      if (!fs.existsSync(UPLOADS_PATH)) {
+        fs.mkdirSync(UPLOADS_PATH, { recursive: true });
+      }
+    } catch (err) {
+      if (err.code !== 'EACCES' && err.code !== 'EEXIST') {
+        console.error("Failed to create uploads directory:", err);
+        return cb(err, null);
+      }
+      // Ignore EACCES/EEXIST, assuming directory is managed by the host
     }
     cb(null, UPLOADS_PATH);
   },
