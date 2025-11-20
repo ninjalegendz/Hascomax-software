@@ -30,7 +30,8 @@ app.use((req, res, next) => {
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
-const UPLOADS_PATH = process.env.UPLOADS_PATH || path.join(__dirname, "uploads");
+const UPLOADS_PATH =
+  process.env.UPLOADS_PATH || path.join(__dirname, "uploads");
 app.use("/uploads", express.static(UPLOADS_PATH));
 
 const storage = multer.diskStorage({
@@ -393,11 +394,9 @@ async function main() {
       );
 
       if (!hasPermission) {
-        return res
-          .status(403)
-          .json({
-            error: "Forbidden: You do not have the required permissions.",
-          });
+        return res.status(403).json({
+          error: "Forbidden: You do not have the required permissions.",
+        });
       }
       next();
     };
@@ -908,11 +907,9 @@ async function main() {
       !Array.isArray(line_items) ||
       line_items.length === 0
     ) {
-      return res
-        .status(400)
-        .json({
-          error: "customer_id and a non-empty line_items array are required.",
-        });
+      return res.status(400).json({
+        error: "customer_id and a non-empty line_items array are required.",
+      });
     }
 
     try {
@@ -1172,10 +1169,7 @@ async function main() {
               ]
             );
           }
-        } else if (
-          item.product_id &&
-          !item.product_id.startsWith("custom-")
-        ) {
+        } else if (item.product_id && !item.product_id.startsWith("custom-")) {
           db.run(
             "INSERT INTO inventory_purchases (id, user_id, product_id, purchase_date, quantity_purchased, quantity_remaining, unit_cost, supplier, created_at, created_by, status, total_received) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
@@ -1252,7 +1246,7 @@ async function main() {
       db.exec("ROLLBACK");
       res.status(500).json({ error: err.message });
     }
-  );
+  });
 
   app.post(
     "/api/invoices/:id/payment",
@@ -4115,8 +4109,7 @@ async function main() {
         );
 
         const changes = [];
-        if (oldRole.name !== name)
-          changes.push(`name to "${name}"`);
+        if (oldRole.name !== name) changes.push(`name to "${name}"`);
         if (oldRole.description !== description) changes.push(`description`);
 
         const oldPerms = new Set(oldRole.permissions);
@@ -4928,11 +4921,9 @@ async function main() {
         if (
           !senderProfile.permissions.includes("tasks:send:urgent-notification")
         ) {
-          return res
-            .status(403)
-            .json({
-              error: "You do not have permission to send urgent notifications.",
-            });
+          return res.status(403).json({
+            error: "You do not have permission to send urgent notifications.",
+          });
         }
 
         const adminId = getAdminId(db, req.user.id);
@@ -5144,11 +5135,9 @@ async function main() {
             newSettings[field] !== undefined &&
             (typeof newSettings[field] !== "number" || newSettings[field] < 0)
           ) {
-            return res
-              .status(400)
-              .json({
-                error: `Invalid value for ${field}. Must be a non-negative number.`,
-              });
+            return res.status(400).json({
+              error: `Invalid value for ${field}. Must be a non-negative number.`,
+            });
           }
         }
 
@@ -6798,13 +6787,11 @@ async function main() {
 
     socket.on("start_typing", (data) => {
       const profile = fetchProfile(db, data.userId);
-      socket
-        .to(data.recipientId)
-        .emit("typing_status", {
-          ...data,
-          isTyping: true,
-          userName: `${profile.first_name} ${profile.last_name}`,
-        });
+      socket.to(data.recipientId).emit("typing_status", {
+        ...data,
+        isTyping: true,
+        userName: `${profile.first_name} ${profile.last_name}`,
+      });
     });
 
     socket.on("stop_typing", (data) => {

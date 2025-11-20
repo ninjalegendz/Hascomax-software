@@ -5,11 +5,9 @@ const initSqlJs = require('sql.js');
 // Use environment variable for DB path if available, otherwise default to local
 const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'main.db');
 
-// Ensure the directory exists if we are using a custom path
-const dbDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
+// The directory for the database file is assumed to exist.
+// On Render, the mount path (e.g., /var/data) is guaranteed to exist.
+// Locally, the 'server' directory exists.
 
 let dbInstance = null;
 
