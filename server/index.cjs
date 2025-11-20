@@ -21,6 +21,24 @@ const io = new Server(server, {
   },
 });
 
+// --- Ensure persistent directories exist before starting ---
+const UPLOADS_PATH = process.env.UPLOADS_PATH || path.join(__dirname, "uploads");
+const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'main.db');
+const DB_DIR = path.dirname(DB_PATH);
+
+try {
+  fs.mkdirSync(UPLOADS_PATH, { recursive: true });
+  fs.mkdirSync(DB_DIR, { recursive: true });
+  console.log(`Persistent directories ensured.`);
+} catch (err) {
+  // On Render, we might get permission errors for root dirs, which is fine if the final dir exists.
+  if (err.code !== 'EACCES') {
+    console.error("FATAL: Failed to ensure persistent directories on startup:", err);
+    process.exit(1);
+  }
+}
+// --- End of directory setup ---
+
 // Request Logging Middleware
 app.use((req, res, next) => {
   console.log(`[Backend Received] ${req.method} ${req.url}`);
@@ -30,24 +48,11 @@ app.use((req, res, next) => {
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
-const UPLOADS_PATH =
-  process.env.UPLOADS_PATH || path.join(__dirname, "uploads");
 app.use("/uploads", express.static(UPLOADS_PATH));
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    try {
-      if (!fs.existsSync(UPLOADS_PATH)) {
-        fs.mkdirSync(UPLOADS_PATH, { recursive: true });
-      }
-    } catch (err) {
-      if (err.code !== 'EACCES' && err.code !== 'EEXIST') {
-        console.error("Failed to create uploads directory:", err);
-        return cb(err, null);
-      }
-      // Ignore EACCES/EEXIST, assuming directory is managed by the host
-    }
-    cb(null, UPLOADS_PATH);
+    cb(null, UPLOADS_PATH); // Directory is guaranteed to exist
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);

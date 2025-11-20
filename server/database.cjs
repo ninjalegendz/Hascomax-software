@@ -5,10 +5,6 @@ const initSqlJs = require('sql.js');
 // Use environment variable for DB path if available, otherwise default to local
 const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'main.db');
 
-// The directory for the database file is assumed to exist.
-// On Render, the mount path (e.g., /var/data) is guaranteed to exist.
-// Locally, the 'server' directory exists.
-
 let dbInstance = null;
 
 async function initializeDatabase() {
@@ -274,20 +270,6 @@ async function initializeDatabase() {
 function saveDatabase(db) {
     if (!db) return;
     try {
-        const dbDir = path.dirname(DB_PATH);
-        try {
-            // Attempt to create the directory.
-            // The `recursive: true` option makes it behave like `mkdir -p`.
-            fs.mkdirSync(dbDir, { recursive: true });
-        } catch (err) {
-            // If the error is EACCES (permission denied) or EEXIST (already exists),
-            // we can ignore it. This is common on platforms like Render where the
-            // directory is managed by the platform.
-            if (err.code !== 'EACCES' && err.code !== 'EEXIST') {
-                throw err; // Re-throw other errors
-            }
-        }
-        
         const data = db.export();
         const buffer = Buffer.from(data);
         fs.writeFileSync(DB_PATH, buffer);
