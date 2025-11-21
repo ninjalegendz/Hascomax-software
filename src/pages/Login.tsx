@@ -1,104 +1,91 @@
 import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Navigate, useLocation, Link } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertTriangle } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { showError } from '@/utils/toast';
 
-const loginSchema = z.object({
-  email: z.string().email('Invalid email address.'),
-  password: z.string().min(1, 'Password is required.'),
-});
+export default function Login() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { login, profile } = useAuth();
+  const navigate = useNavigate();
 
-type LoginFormValues = z.infer<typeof loginSchema>;
-
-const Login = () => {
-  const { profile, login } = useAuth();
-  const location = useLocation();
-  const [error, setError] = useState<string | null>(null);
-  const [signupAvailable, setSignupAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    // If there's already a profile, redirect to dashboard
+    if (profile) {
+      navigate('/');
+    }
+  }, [profile, navigate]);
 
   useEffect(() => {
     const checkSignupStatus = async () => {
       try {
         const res = await fetch('/api/signup-status');
         const data = await res.json();
-        setSignupAvailable(data.signupAvailable);
-      } catch (err) {
-        // Assume signup is not available if status check fails
-        setSignupAvailable(false);
+        if (data.signupAvailable) {
+          navigate('/signup');
+        }
+      } catch (error) {
+        console.error('Failed to check signup status:', error);
       }
     };
     checkSignupStatus();
-  }, []);
+  }, [navigate]);
 
-  const form = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '' },
-  });
-
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = form;
-
-  const onSubmit = async (data: LoginFormValues) => {
-    setError(null);
-    const result = await login(data);
-    if (!result.success) {
-      setError(result.error || 'Login failed.');
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const { success, error } = await login({ email, password });
+    if (!success) {
+      showError(error || 'Login failed. Please check your credentials.');
     }
+    setLoading(false);
   };
 
-  if (profile) {
-    return <Navigate to="/" state={{ from: location }} replace />;
-  }
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
+    <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-950">
       <Card className="mx-auto max-w-sm">
         <CardHeader>
           <CardTitle className="text-2xl">Login</CardTitle>
           <CardDescription>Enter your email below to login to your account</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
-            {error && (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Login Failed</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="m@example.com" {...register('email')} />
-              {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
+          <form onSubmit={handleSubmit}>
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="m@example.com"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <div className="flex items-center">
+                  <Label htmlFor="password">Password</Label>
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? 'Logging in...' : 'Login'}
+              </Button>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" {...register('password')} />
-              {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
-            </div>
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? 'Logging in...' : 'Login'}
-            </Button>
           </form>
-          {signupAvailable && (
-            <div className="mt-4 text-center text-sm">
-              No account?{" "}
-              <Link to="/signup" className="underline">
-                Sign up
-              </Link>
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>
   );
-};
-
-export default Login;
+}

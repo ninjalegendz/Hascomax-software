@@ -232,109 +232,10 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
-const apiKeyMiddleware = async (req, res, next) => {
-  const db = await initializeDatabase();
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res
-      .status(401)
-      .json({ error: "API key is missing or improperly formatted." });
-  }
-  const apiKey = authHeader.split(" ")[1];
-
-  try {
-    const allKeysRes = db.exec(`SELECT id, user_id, hashed_key FROM api_keys`);
-    const allKeys = formatSqlJsResult(allKeysRes);
-
-    let validKey = null;
-    for (const key of allKeys) {
-      const isMatch = await bcrypt.compare(apiKey, key.hashed_key);
-      if (isMatch) {
-        validKey = key;
-        break;
-      }
-    }
-
-    if (!validKey) {
-      return res.status(401).json({ error: "Invalid API key." });
-    }
-
-    req.user = { id: validKey.user_id, admin_id: validKey.user_id }; // Set user context for API requests
-
-    // Update last_used_at without blocking the response
-    db.run("UPDATE api_keys SET last_used_at = ? WHERE id = ?", [
-      new Date().toISOString(),
-      validKey.id,
-    ]);
-    saveDatabase(db);
-
-    next();
-  } catch (err) {
-    res
-      .status(500)
-      .json({ error: "Internal server error during authentication." });
-  }
-};
-
 const activeUsers = new Map(); // Map<socketId, { userId: string, name: string, isAdmin: boolean }>
 
 async function main() {
   const db = await initializeDatabase();
-
-  app.get("/api/image-proxy", authMiddleware, (req, res) => {
-    const imageUrl = req.query.url;
-    if (!imageUrl) {
-      return res.status(400).send("Image URL is required");
-    }
-
-    try {
-      const parsedUrl = new URL(imageUrl);
-      const { hostname, protocol } = parsedUrl;
-
-      if (!["http:", "https:"].includes(protocol)) {
-        return res.status(400).send("Invalid protocol.");
-      }
-
-      // Basic SSRF protection
-      const forbiddenHostnames = ["localhost", "127.0.0.1", "169.254.169.254"];
-      if (
-        forbiddenHostnames.includes(hostname) ||
-        hostname.endsWith(".internal") ||
-        hostname.endsWith(".local")
-      ) {
-        return res.status(403).send("Forbidden host.");
-      }
-
-      const options = {
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port || (parsedUrl.protocol === "https:" ? 443 : 80),
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: "GET",
-        headers: {
-          "User-Agent": req.headers["user-agent"],
-        },
-      };
-
-      const protocolToUse = parsedUrl.protocol === "https:" ? https : http;
-
-      const proxyReq = protocolToUse.request(options, (proxyRes) => {
-        res.writeHead(proxyRes.statusCode, proxyRes.headers);
-        proxyRes.pipe(res, {
-          end: true,
-        });
-      });
-
-      proxyReq.on("error", (e) => {
-        console.error(`Problem with image proxy request: ${e.message}`);
-        res.status(502).send(`Error fetching image: ${e.message}`);
-      });
-
-      proxyReq.end();
-    } catch (e) {
-      console.error(`Invalid URL for image proxy: ${imageUrl}`);
-      res.status(400).send("Invalid image URL");
-    }
-  });
 
   const defaultSettings = {
     currency: "$",
@@ -415,14 +316,165 @@ async function main() {
     };
   };
 
-  // --- API V1 ROUTES ---
-  const apiV1Router = express.Router();
-  apiV1Router.use(apiKeyMiddleware);
+  // --- AUTHENTICATION ROUTES ---
+  app.get("/api/signup-status", (req, res) => {
+    try {
+      const r = db.exec("SELECT COUNT(*) as count FROM profiles");
+      const count = r.length > 0 && r[0].values.length > 0 ? r[0].values[0][0] : 0;
+      res.json({ signupAvailable: count === 0 });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/signup", async (req, res) => {
+    try {
+      const { first_name, last_name, email, password } = req.body;
+      if (!first_name || !last_name || !email || !password) {
+        return res.status(400).json({ error: "All fields are required." });
+      }
+
+      const userCountRes = db.exec("SELECT COUNT(*) as count FROM profiles");
+      if (userCountRes.length > 0 && userCountRes[0].values.length > 0 && userCountRes[0].values[0][0] > 0) {
+        return res.status(403).json({ error: "Signup is not available." });
+      }
+
+      db.exec("BEGIN");
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const newUserId = crypto.randomUUID();
+      const newRoleId = crypto.randomUUID();
+
+      const ALL_PERMISSIONS = [
+        "dashboard:view", "dashboard:view:financials", "customers:view", "customers:view:financials", "customers:create", "customers:edit:details", "customers:edit:status", "customers:manage:links", "customers:delete", "customers:import", "invoices:view", "invoices:create", "invoices:edit", "invoices:send", "invoices:delete", "receipts:view", "returns:view", "returns:create", "returns:delete", "repairs:view", "repairs:create", "repairs:edit", "repairs:delete", "quotations:view", "quotations:create", "quotations:edit", "quotations:delete", "quotations:convert", "sales:view", "sales:process", "sales:apply:discounts", "sales:process:refunds", "inventory:view", "inventory:create", "inventory:edit:details", "inventory:edit:price", "inventory:delete", "damages:view", "damages:create", "damages:edit", "damages:delete", "purchases:view", "purchases:create", "purchases:edit", "purchases:delete", "expenses:view", "expenses:create", "expenses:edit", "expenses:delete", "tasks:view", "tasks:create", "tasks:edit", "tasks:delete", "tasks:assign", "tasks:send:urgent-notification", "messages:view", "messages:send", "activity:view", "analytics:view", "accounting:view", "settings:view", "employees:view", "employees:create", "employees:edit", "employees:delete", "settings:manage:payment-methods", "settings:manage:couriers", "settings:manage:expense-categories", "settings:manage:clear", "settings:manage:stress-test", "settings:manage:system-status", "settings:manage:api-keys",
+      ];
+
+      db.run(
+        "INSERT INTO roles (id, user_id, name, description, permissions, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        [newRoleId, newUserId, "Admin", "Administrator with all permissions", JSON.stringify(ALL_PERMISSIONS), new Date().toISOString()]
+      );
+
+      db.run(
+        "INSERT INTO profiles (id, first_name, last_name, email, password, admin_id, role_id, requires_password_change, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [newUserId, first_name, last_name, email, hashedPassword, newUserId, newRoleId, 0, new Date().toISOString()]
+      );
+
+      logActivity(db, `created the first admin account for ${first_name} ${last_name}.`, { user_id: newUserId, performer_id: newUserId });
+
+      const profile = fetchProfile(db, newUserId);
+      const token = jwt.sign({ id: newUserId, admin_id: newUserId }, JWT_SECRET, { expiresIn: "7d" });
+
+      db.exec("COMMIT");
+      saveDatabase(db);
+
+      io.emit("data_changed", { table: "profiles" });
+      io.emit("data_changed", { table: "roles" });
+      io.emit("data_changed", { table: "activities" });
+
+      res.status(201).json({ token, profile });
+    } catch (err) {
+      db.exec("ROLLBACK");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      const userStmt = db.prepare("SELECT * FROM profiles WHERE email = :email");
+      userStmt.bind({ ":email": email });
+      const user = userStmt.step() ? userStmt.getAsObject() : null;
+      userStmt.free();
+
+      if (!user) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      const profile = fetchProfile(db, user.id);
+      const token = jwt.sign({ id: user.id, admin_id: user.admin_id }, JWT_SECRET, { expiresIn: "7d" });
+
+      res.json({ token, profile });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/me", authMiddleware, (req, res) => {
+    try {
+      const profile = fetchProfile(db, req.user.id);
+      if (!profile) {
+        return res.status(404).json({ error: "Profile not found" });
+      }
+      res.json({ profile });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/image-proxy", authMiddleware, (req, res) => {
+    const imageUrl = req.query.url;
+    if (!imageUrl) {
+      return res.status(400).send("Image URL is required");
+    }
+
+    try {
+      const parsedUrl = new URL(imageUrl);
+      const { hostname, protocol } = parsedUrl;
+
+      if (!["http:", "https:"].includes(protocol)) {
+        return res.status(400).send("Invalid protocol.");
+      }
+
+      // Basic SSRF protection
+      const forbiddenHostnames = ["localhost", "127.0.0.1", "169.254.169.254"];
+      if (
+        forbiddenHostnames.includes(hostname) ||
+        hostname.endsWith(".internal") ||
+        hostname.endsWith(".local")
+      ) {
+        return res.status(403).send("Forbidden host.");
+      }
+
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (parsedUrl.protocol === "https:" ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: "GET",
+        headers: {
+          "User-Agent": req.headers["user-agent"],
+        },
+      };
+
+      const protocolToUse = parsedUrl.protocol === "https:" ? https : http;
+
+      const proxyReq = protocolToUse.request(options, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res, {
+          end: true,
+        });
+      });
+
+      proxyReq.on("error", (e) => {
+        console.error(`Problem with image proxy request: ${e.message}`);
+        res.status(502).send(`Error fetching image: ${e.message}`);
+      });
+
+      proxyReq.end();
+    } catch (e) {
+      console.error(`Invalid URL for image proxy: ${imageUrl}`);
+      res.status(400).send("Invalid image URL");
+    }
+  });
 
   // Customers
-  apiV1Router.get("/customers", (req, res) => {
+  app.get("/api/customers", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const { limit = 20, page = 1 } = req.query;
       const offset = (parseInt(page) - 1) * parseInt(limit);
 
@@ -461,9 +513,9 @@ async function main() {
     }
   });
 
-  apiV1Router.get("/customers/:id", (req, res) => {
+  app.get("/api/customers/:id", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const stmt = db.prepare(
         "SELECT id, customer_number, name, email, phone, secondary_phone, address, status, balance, created_at FROM customers WHERE id = :id AND user_id = :adminId"
       );
@@ -478,9 +530,9 @@ async function main() {
     }
   });
 
-  apiV1Router.post("/customers", (req, res) => {
+  app.post("/api/customers", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const { name, email, phone, address, status = "Active" } = req.body;
       if (!name || !phone || !address)
         return res
@@ -521,7 +573,7 @@ async function main() {
           req.user.id,
         ]
       );
-      logActivity(db, `created customer ${name} via API.`, {
+      logActivity(db, `created customer ${name}.`, {
         user_id: adminId,
         customer_id: customerId,
         performer_id: req.user.id,
@@ -547,9 +599,9 @@ async function main() {
     }
   });
 
-  apiV1Router.put("/customers/:id", (req, res) => {
+  app.put("/api/customers/:id", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const customerId = req.params.id;
       const { name, email, phone, address, status } = req.body;
 
@@ -586,7 +638,7 @@ async function main() {
           customerId,
         ]
       );
-      logActivity(db, `updated customer ${updatedName} via API.`, {
+      logActivity(db, `updated customer ${updatedName}.`, {
         user_id: adminId,
         customer_id: customerId,
         performer_id: req.user.id,
@@ -612,9 +664,9 @@ async function main() {
     }
   });
 
-  apiV1Router.delete("/customers/:id", (req, res) => {
+  app.delete("/api/customers/:id", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const customerId = req.params.id;
       db.exec("BEGIN");
       const customerStmt = db.prepare(
@@ -626,7 +678,7 @@ async function main() {
       if (!customer)
         return res.status(404).json({ error: "Customer not found" });
       db.run("DELETE FROM customers WHERE id = ?", [customerId]);
-      logActivity(db, `deleted customer ${customer.name} via API.`, {
+      logActivity(db, `deleted customer ${customer.name}.`, {
         user_id: adminId,
         performer_id: req.user.id,
       });
@@ -642,9 +694,9 @@ async function main() {
   });
 
   // Products
-  apiV1Router.get("/products", (req, res) => {
+  app.get("/api/products", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const { limit = 20, page = 1 } = req.query;
       const offset = (parseInt(page) - 1) * parseInt(limit);
 
@@ -683,9 +735,9 @@ async function main() {
     }
   });
 
-  apiV1Router.get("/products/:id", (req, res) => {
+  app.get("/api/products/:id", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const stmt = db.prepare(
         "SELECT id, name, sku, barcode, description, price, category, created_at FROM products WHERE id = :id AND user_id = :adminId"
       );
@@ -699,9 +751,9 @@ async function main() {
     }
   });
 
-  apiV1Router.post("/products", (req, res) => {
+  app.post("/api/products", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const { name, sku, price, description, category, barcode } = req.body;
       if (!name || !sku || price === undefined)
         return res
@@ -725,7 +777,7 @@ async function main() {
           req.user.id,
         ]
       );
-      logActivity(db, `created product ${name} via API.`, {
+      logActivity(db, `created product ${name}.`, {
         user_id: adminId,
         performer_id: req.user.id,
       });
@@ -750,9 +802,9 @@ async function main() {
     }
   });
 
-  apiV1Router.put("/products/:id", (req, res) => {
+  app.put("/api/products/:id", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const productId = req.params.id;
       const { name, sku, price, description, category, barcode } = req.body;
 
@@ -793,7 +845,7 @@ async function main() {
           productId,
         ]
       );
-      logActivity(db, `updated product ${updatedName} via API.`, {
+      logActivity(db, `updated product ${updatedName}.`, {
         user_id: adminId,
         performer_id: req.user.id,
       });
@@ -818,9 +870,9 @@ async function main() {
     }
   });
 
-  apiV1Router.delete("/products/:id", (req, res) => {
+  app.delete("/api/products/:id", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const productId = req.params.id;
       db.exec("BEGIN");
       const productStmt = db.prepare(
@@ -831,7 +883,7 @@ async function main() {
       productStmt.free();
       if (!product) return res.status(404).json({ error: "Product not found" });
       db.run("DELETE FROM products WHERE id = ?", [productId]);
-      logActivity(db, `deleted product ${product.name} via API.`, {
+      logActivity(db, `deleted product ${product.name}.`, {
         user_id: adminId,
         performer_id: req.user.id,
       });
@@ -847,9 +899,9 @@ async function main() {
   });
 
   // Invoices
-  apiV1Router.get("/invoices", (req, res) => {
+  app.get("/api/invoices", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const { limit = 20, page = 1 } = req.query;
       const offset = (parseInt(page) - 1) * parseInt(limit);
 
@@ -891,9 +943,9 @@ async function main() {
     }
   });
 
-  apiV1Router.get("/invoices/:id", (req, res) => {
+  app.get("/api/invoices/:id", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const stmt = db.prepare(
         "SELECT * FROM invoices WHERE id = :id AND user_id = :adminId"
       );
@@ -909,8 +961,8 @@ async function main() {
     }
   });
 
-  apiV1Router.post("/invoices", (req, res) => {
-    const adminId = req.user.admin_id;
+  app.post("/api/invoices", authMiddleware, (req, res) => {
+    const adminId = getAdminId(db, req.user.id);
     const creatorId = req.user.id;
     const { customer_id, line_items } = req.body;
 
@@ -1084,7 +1136,7 @@ async function main() {
 
       logActivity(
         db,
-        `created invoice ${invoice_number} for ${customer.name} via API.`,
+        `created invoice ${invoice_number} for ${customer.name}.`,
         {
           user_id: adminId,
           customer_id,
@@ -1120,9 +1172,9 @@ async function main() {
     }
   });
 
-  apiV1Router.delete("/invoices/:id", (req, res) => {
+  app.delete("/api/invoices/:id", authMiddleware, (req, res) => {
     try {
-      const adminId = req.user.admin_id;
+      const adminId = getAdminId(db, req.user.id);
       const creatorId = req.user.id;
       const invoiceId = req.params.id;
       db.exec("BEGIN");
@@ -1238,7 +1290,7 @@ async function main() {
       ]);
       logActivity(
         db,
-        `deleted invoice ${invoice.invoice_number} for ${invoice.customer_name} via API.`,
+        `deleted invoice ${invoice.invoice_number} for ${invoice.customer_name}.`,
         {
           user_id: adminId,
           customer_id: invoice.customer_id,
@@ -5571,7 +5623,63 @@ async function main() {
           "UPDATE couriers SET name = ?, first_kg_price = ?, additional_kg_price = ? WHERE id = ? AND user_id = ?",
           [name, first_kg_price, additional_kg_price, courierId, adminId]
         );
-        logActivity(db, `updated courier '${name}'.`, {
+        logActivity(<think>Initial files ranking:
+
+server/index.cjs: 0.97
+
+server/database.cjs: 0.96
+
+.env: 0.86
+
+vite.config.ts: 0.85
+
+server/package.json: 0.84
+
+package.json: 0.57
+
+.gitignore: 0.55
+
+src/contexts/SettingsContext.tsx: 0.55
+
+src/contexts/AuthContext.tsx: 0.52
+
+src/lib/api.ts: 0.52
+
+src/types/index.ts: 0.50
+
+src/pages/Dashboard.tsx: 0.49
+
+src/hooks/useCurrency.ts: 0.43
+
+src/hooks/useCustomerDetails.ts: 0.41
+
+src/types/schemas.ts: 0.40
+
+src/main.tsx: 0.38
+
+src/components/RepairImageUploader.tsx: 0.36
+
+src/constants/permissions.ts: 0.36
+
+src/components/ui/use-toast.ts: 0.35
+
+src/components/Layout.tsx: 0.35
+
+src/pages/Activity.tsx: 0.32
+
+src/components/ActivityFeed.tsx: 0.32
+
+src/components/ProductImporter.tsx: 0.32
+
+src/App.tsx: 0.32
+
+src/hooks/useCustomerData.ts: 0.31
+
+src/contexts/RealtimeContext.tsx: 0.31</think><think>Re-ranking the files. Please wait a moment...
+
+Reasoning: undefined
+
+</think><dyad-codebase-context files="vite.config.ts,server/index.cjs,src/contexts/AuthContext.tsx,src/contexts/RealtimeContext.tsx,src/lib/api.ts,src/App.tsx,src/constants/permissions.ts,src/components/Layout.tsx,server/database.cjs,package.json,server/package.json,.env"></dyad-codebase-context><think>dyad-token-savings?original-tokens=315083&smart-context-tokens=69752.75</think>db, `updated courier '${name}'.`, {
           user_id: adminId,
           performer_id: req.user.id,
         });
