@@ -12,15 +12,6 @@ const fs = require("fs");
 const https = require("https");
 const Papa = require("papaparse");
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
-});
-
 // --- Ensure persistent directories exist before starting ---
 const UPLOADS_PATH = process.env.UPLOADS_PATH || path.join(__dirname, "uploads");
 const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'main.db');
@@ -38,6 +29,15 @@ try {
   }
 }
 // --- End of directory setup ---
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
 
 // Request Logging Middleware
 app.use((req, res, next) => {
@@ -96,26 +96,6 @@ if (!JWT_SECRET) {
     );
   }
 }
-
-const ALL_PERMISSIONS = [
-  'dashboard:view', 'dashboard:view:financials', 'customers:view', 'customers:view:financials',
-  'customers:create', 'customers:edit:details', 'customers:edit:status', 'customers:manage:links',
-  'customers:delete', 'customers:import', 'invoices:view', 'invoices:create', 'invoices:edit',
-  'invoices:send', 'invoices:delete', 'receipts:view', 'returns:view', 'returns:create',
-  'returns:delete', 'repairs:view', 'repairs:create', 'repairs:edit', 'repairs:delete',
-  'quotations:view', 'quotations:create', 'quotations:edit', 'quotations:delete',
-  'quotations:convert', 'sales:view', 'sales:process', 'sales:apply:discounts',
-  'sales:process:refunds', 'inventory:view', 'inventory:create', 'inventory:edit:details',
-  'inventory:edit:price', 'inventory:delete', 'damages:view', 'damages:create', 'damages:edit',
-  'damages:delete', 'purchases:view', 'purchases:create', 'purchases:edit', 'purchases:delete',
-  'expenses:view', 'expenses:create', 'expenses:edit', 'expenses:delete', 'tasks:view',
-  'tasks:create', 'tasks:edit', 'tasks:delete', 'tasks:assign', 'tasks:send:urgent-notification',
-  'messages:view', 'messages:send', 'activity:view', 'analytics:view', 'accounting:view',
-  'settings:view', 'employees:view', 'employees:create', 'employees:edit', 'employees:delete',
-  'settings:manage:payment-methods', 'settings:manage:couriers', 'settings:manage:expense-categories',
-  'settings:manage:clear', 'settings:manage:stress-test', 'settings:manage:system-status',
-  'settings:manage:api-keys',
-];
 
 const MOCK_FIRST_NAMES = [
   "John",

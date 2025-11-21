@@ -4,11 +4,11 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 export default defineConfig(({ mode }) => {
-  const isProduction = mode === 'production';
-  
+  const isProduction = mode === "production";
+
   // Use the deployed backend URL for production builds, otherwise use the local server.
-  const BACKEND_URL = isProduction 
-    ? "https://hascomax-software.onrender.com" 
+  const BACKEND_URL = isProduction
+    ? "http://localhost:3000"
     : "http://localhost:3000";
 
   return {
