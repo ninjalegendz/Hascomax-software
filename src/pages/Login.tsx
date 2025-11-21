@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +22,21 @@ const Login = () => {
   const { profile, login } = useAuth();
   const location = useLocation();
   const [error, setError] = useState<string | null>(null);
+  const [signupAvailable, setSignupAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const checkSignupStatus = async () => {
+      try {
+        const res = await fetch('/api/signup-status');
+        const data = await res.json();
+        setSignupAvailable(data.signupAvailable);
+      } catch (err) {
+        // Assume signup is not available if status check fails
+        setSignupAvailable(false);
+      }
+    };
+    checkSignupStatus();
+  }, []);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -72,6 +87,14 @@ const Login = () => {
               {isSubmitting ? 'Logging in...' : 'Login'}
             </Button>
           </form>
+          {signupAvailable && (
+            <div className="mt-4 text-center text-sm">
+              No account?{" "}
+              <Link to="/signup" className="underline">
+                Sign up
+              </Link>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

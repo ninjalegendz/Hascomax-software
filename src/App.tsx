@@ -16,6 +16,7 @@ import CustomerDetails from "./pages/CustomerDetails";
 import InvoiceDetails from "./pages/InvoiceDetails";
 import { AuthProvider } from "./contexts/AuthContext";
 import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 import Inventory from "./pages/Inventory";
 import Purchases from "./pages/Purchases";
 import Roles from "./pages/Roles";
@@ -62,6 +63,7 @@ const App = () => (
                 <RealtimeToastNotifier />
                 <Routes>
                   <Route path="/login" element={<Login />} />
+                  <Route path="/signup" element={<Signup />} />
                   <Route path="/bingo" element={<Bingo />} /> {/* Hidden Route */}
                   <Route element={<Layout />}>
                     <Route path="/" element={<Dashboard />} />

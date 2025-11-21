@@ -20,6 +20,7 @@ interface AuthContextType {
   loading: boolean;
   token: string | null;
   login: (body: any) => Promise<{ success: boolean; error?: string }>;
+  signup: (body: any) => Promise<{ success: boolean; error?: string }>;
   signOut: () => void;
   refreshProfile: () => Promise<void>;
 }
@@ -96,6 +97,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const signup = async (body: any) => {
+    try {
+      const res = await fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return handleAuthSuccess(data);
+      }
+      return handleAuthError(res);
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  };
+
   const signOut = () => {
     localStorage.removeItem('authToken');
     setToken(null);
@@ -108,6 +126,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     loading,
     token,
     login,
+    signup,
     signOut,
     refreshProfile,
   };
