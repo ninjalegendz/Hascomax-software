@@ -13,8 +13,9 @@ const https = require("https");
 const Papa = require("papaparse");
 
 // --- Ensure persistent directories exist before starting ---
-const UPLOADS_PATH = process.env.UPLOADS_PATH || path.join(__dirname, "uploads");
-const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'main.db');
+const UPLOADS_PATH =
+  process.env.UPLOADS_PATH || path.join(__dirname, "uploads");
+const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, "main.db");
 const DB_DIR = path.dirname(DB_PATH);
 
 try {
@@ -23,8 +24,11 @@ try {
   console.log(`Persistent directories ensured.`);
 } catch (err) {
   // On Render, we might get permission errors for root dirs, which is fine if the final dir exists.
-  if (err.code !== 'EACCES') {
-    console.error("FATAL: Failed to ensure persistent directories on startup:", err);
+  if (err.code !== "EACCES") {
+    console.error(
+      "FATAL: Failed to ensure persistent directories on startup:",
+      err
+    );
     process.exit(1);
   }
 }
@@ -320,7 +324,8 @@ async function main() {
   app.get("/api/signup-status", (req, res) => {
     try {
       const r = db.exec("SELECT COUNT(*) as count FROM profiles");
-      const count = r.length > 0 && r[0].values.length > 0 ? r[0].values[0][0] : 0;
+      const count =
+        r.length > 0 && r[0].values.length > 0 ? r[0].values[0][0] : 0;
       res.json({ signupAvailable: count === 0 });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -335,7 +340,11 @@ async function main() {
       }
 
       const userCountRes = db.exec("SELECT COUNT(*) as count FROM profiles");
-      if (userCountRes.length > 0 && userCountRes[0].values.length > 0 && userCountRes[0].values[0][0] > 0) {
+      if (
+        userCountRes.length > 0 &&
+        userCountRes[0].values.length > 0 &&
+        userCountRes[0].values[0][0] > 0
+      ) {
         return res.status(403).json({ error: "Signup is not available." });
       }
 
@@ -346,23 +355,119 @@ async function main() {
       const newRoleId = crypto.randomUUID();
 
       const ALL_PERMISSIONS = [
-        "dashboard:view", "dashboard:view:financials", "customers:view", "customers:view:financials", "customers:create", "customers:edit:details", "customers:edit:status", "customers:manage:links", "customers:delete", "customers:import", "invoices:view", "invoices:create", "invoices:edit", "invoices:send", "invoices:delete", "receipts:view", "returns:view", "returns:create", "returns:delete", "repairs:view", "repairs:create", "repairs:edit", "repairs:delete", "quotations:view", "quotations:create", "quotations:edit", "quotations:delete", "quotations:convert", "sales:view", "sales:process", "sales:apply:discounts", "sales:process:refunds", "inventory:view", "inventory:create", "inventory:edit:details", "inventory:edit:price", "inventory:delete", "damages:view", "damages:create", "damages:edit", "damages:delete", "purchases:view", "purchases:create", "purchases:edit", "purchases:delete", "expenses:view", "expenses:create", "expenses:edit", "expenses:delete", "tasks:view", "tasks:create", "tasks:edit", "tasks:delete", "tasks:assign", "tasks:send:urgent-notification", "messages:view", "messages:send", "activity:view", "analytics:view", "accounting:view", "settings:view", "employees:view", "employees:create", "employees:edit", "employees:delete", "settings:manage:payment-methods", "settings:manage:couriers", "settings:manage:expense-categories", "settings:manage:clear", "settings:manage:stress-test", "settings:manage:system-status", "settings:manage:api-keys",
+        "dashboard:view",
+        "dashboard:view:financials",
+        "customers:view",
+        "customers:view:financials",
+        "customers:create",
+        "customers:edit:details",
+        "customers:edit:status",
+        "customers:manage:links",
+        "customers:delete",
+        "customers:import",
+        "invoices:view",
+        "invoices:create",
+        "invoices:edit",
+        "invoices:send",
+        "invoices:delete",
+        "receipts:view",
+        "returns:view",
+        "returns:create",
+        "returns:delete",
+        "repairs:view",
+        "repairs:create",
+        "repairs:edit",
+        "repairs:delete",
+        "quotations:view",
+        "quotations:create",
+        "quotations:edit",
+        "quotations:delete",
+        "quotations:convert",
+        "sales:view",
+        "sales:process",
+        "sales:apply:discounts",
+        "sales:process:refunds",
+        "inventory:view",
+        "inventory:create",
+        "inventory:edit:details",
+        "inventory:edit:price",
+        "inventory:delete",
+        "damages:view",
+        "damages:create",
+        "damages:edit",
+        "damages:delete",
+        "purchases:view",
+        "purchases:create",
+        "purchases:edit",
+        "purchases:delete",
+        "expenses:view",
+        "expenses:create",
+        "expenses:edit",
+        "expenses:delete",
+        "tasks:view",
+        "tasks:create",
+        "tasks:edit",
+        "tasks:delete",
+        "tasks:assign",
+        "tasks:send:urgent-notification",
+        "messages:view",
+        "messages:send",
+        "activity:view",
+        "analytics:view",
+        "accounting:view",
+        "settings:view",
+        "employees:view",
+        "employees:create",
+        "employees:edit",
+        "employees:delete",
+        "settings:manage:payment-methods",
+        "settings:manage:couriers",
+        "settings:manage:expense-categories",
+        "settings:manage:clear",
+        "settings:manage:stress-test",
+        "settings:manage:system-status",
+        "settings:manage:api-keys",
       ];
 
       db.run(
         "INSERT INTO roles (id, user_id, name, description, permissions, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        [newRoleId, newUserId, "Admin", "Administrator with all permissions", JSON.stringify(ALL_PERMISSIONS), new Date().toISOString()]
+        [
+          newRoleId,
+          newUserId,
+          "Admin",
+          "Administrator with all permissions",
+          JSON.stringify(ALL_PERMISSIONS),
+          new Date().toISOString(),
+        ]
       );
 
       db.run(
         "INSERT INTO profiles (id, first_name, last_name, email, password, admin_id, role_id, requires_password_change, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [newUserId, first_name, last_name, email, hashedPassword, newUserId, newRoleId, 0, new Date().toISOString()]
+        [
+          newUserId,
+          first_name,
+          last_name,
+          email,
+          hashedPassword,
+          newUserId,
+          newRoleId,
+          0,
+          new Date().toISOString(),
+        ]
       );
 
-      logActivity(db, `created the first admin account for ${first_name} ${last_name}.`, { user_id: newUserId, performer_id: newUserId });
+      logActivity(
+        db,
+        `created the first admin account for ${first_name} ${last_name}.`,
+        { user_id: newUserId, performer_id: newUserId }
+      );
 
       const profile = fetchProfile(db, newUserId);
-      const token = jwt.sign({ id: newUserId, admin_id: newUserId }, JWT_SECRET, { expiresIn: "7d" });
+      const token = jwt.sign(
+        { id: newUserId, admin_id: newUserId },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
 
       db.exec("COMMIT");
       saveDatabase(db);
@@ -381,7 +486,9 @@ async function main() {
   app.post("/api/login", async (req, res) => {
     try {
       const { email, password } = req.body;
-      const userStmt = db.prepare("SELECT * FROM profiles WHERE email = :email");
+      const userStmt = db.prepare(
+        "SELECT * FROM profiles WHERE email = :email"
+      );
       userStmt.bind({ ":email": email });
       const user = userStmt.step() ? userStmt.getAsObject() : null;
       userStmt.free();
@@ -396,7 +503,11 @@ async function main() {
       }
 
       const profile = fetchProfile(db, user.id);
-      const token = jwt.sign({ id: user.id, admin_id: user.admin_id }, JWT_SECRET, { expiresIn: "7d" });
+      const token = jwt.sign(
+        { id: user.id, admin_id: user.admin_id },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
 
       res.json({ token, profile });
     } catch (err) {
@@ -5623,63 +5734,7 @@ async function main() {
           "UPDATE couriers SET name = ?, first_kg_price = ?, additional_kg_price = ? WHERE id = ? AND user_id = ?",
           [name, first_kg_price, additional_kg_price, courierId, adminId]
         );
-        logActivity(<think>Initial files ranking:
-
-server/index.cjs: 0.97
-
-server/database.cjs: 0.96
-
-.env: 0.86
-
-vite.config.ts: 0.85
-
-server/package.json: 0.84
-
-package.json: 0.57
-
-.gitignore: 0.55
-
-src/contexts/SettingsContext.tsx: 0.55
-
-src/contexts/AuthContext.tsx: 0.52
-
-src/lib/api.ts: 0.52
-
-src/types/index.ts: 0.50
-
-src/pages/Dashboard.tsx: 0.49
-
-src/hooks/useCurrency.ts: 0.43
-
-src/hooks/useCustomerDetails.ts: 0.41
-
-src/types/schemas.ts: 0.40
-
-src/main.tsx: 0.38
-
-src/components/RepairImageUploader.tsx: 0.36
-
-src/constants/permissions.ts: 0.36
-
-src/components/ui/use-toast.ts: 0.35
-
-src/components/Layout.tsx: 0.35
-
-src/pages/Activity.tsx: 0.32
-
-src/components/ActivityFeed.tsx: 0.32
-
-src/components/ProductImporter.tsx: 0.32
-
-src/App.tsx: 0.32
-
-src/hooks/useCustomerData.ts: 0.31
-
-src/contexts/RealtimeContext.tsx: 0.31</think><think>Re-ranking the files. Please wait a moment...
-
-Reasoning: undefined
-
-</think><dyad-codebase-context files="vite.config.ts,server/index.cjs,src/contexts/AuthContext.tsx,src/contexts/RealtimeContext.tsx,src/lib/api.ts,src/App.tsx,src/constants/permissions.ts,src/components/Layout.tsx,server/database.cjs,package.json,server/package.json,.env"></dyad-codebase-context><think>dyad-token-savings?original-tokens=315083&smart-context-tokens=69752.75</think>db, `updated courier '${name}'.`, {
+        logActivity(db, `updated courier '${name}'.`, {
           user_id: adminId,
           performer_id: req.user.id,
         });
